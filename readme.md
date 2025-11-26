@@ -8,9 +8,13 @@
 
 ## ⚡ Quick Start
 
-### 1. Install
+### 1. Install (Easiest Way)
+Download **`install_magic.bat`** from the Releases page, right-click, and **Run as Administrator**.
+*(This automatically installs the latest version and keeps it updated.)*
+
+### Option B: Developer Setup (Source)
+If you downloaded the source code:
 Right-click **`setup_magic.bat`** and choose **Run as Administrator**.
-*(This installs Python and the image engine for you. It takes about 1 minute.)*
 
 ### 2. Use
 Open any terminal (Command Prompt) and type:
@@ -87,5 +91,6 @@ magic --watch 1080p format png
 **A:** JPG, PNG, WebP, BMP, TIFF, GIF, and ICO.
 
 ---
+
 
 **Made with ❤️ for efficiency.**
