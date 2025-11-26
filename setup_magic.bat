@@ -6,8 +6,6 @@ setlocal EnableExtensions DisableDelayedExpansion
 ::  Description: One-click installer for the Magick Image CLI.
 ::               Installs Python, ImageMagick, and dependencies.
 ::               Sets up the system PATH and creates the magic.bat wrapper.
-::  Author: Antigravity
-::  License: MIT
 :: ===========================================================================
 
 title 🪄 Magic Setup - One Click Installer
@@ -212,3 +210,4 @@ exit /b 1
 echo ❌ Failed to install ImageMagick.
 pause
 exit /b 1
+
