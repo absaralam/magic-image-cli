@@ -6,8 +6,6 @@
 
 ---
 
----
-
 ## ⚡ Quick Start
 
 ### 1. Install (Windows)
@@ -100,5 +98,6 @@ magic --watch 1080p format png
 **A:** JPG, PNG, WebP, BMP, TIFF, GIF, and ICO.
 
 ---
+
 
 **Made with ❤️ for efficiency.**
