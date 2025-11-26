@@ -10,6 +10,9 @@ Usage:
     magic <image_path> <size> [options]
     magic --watch
     magic --clipboard
+
+Author: absaralam
+License: MIT
 """
 
 import subprocess
@@ -37,6 +40,8 @@ init(autoreset=True)
 # -------------------------------
 # Constants & Config
 # -------------------------------
+__version__ = "2.4"
+
 PRESETS: Dict[str, str] = {
     "720p": "x720",
     "1080p": "x1080",
@@ -89,6 +94,18 @@ def safe_filename(base: str, suffix: str, ext: str, folder: Path) -> Path:
         out_path = folder / f"{base}{suffix}_v{counter}{ext}"
         counter += 1
     return out_path
+
+# -------------------------------
+# Core Processor
+# -------------------------------
+def get_magick_command() -> str:
+    """Detects the available ImageMagick command (magick vs convert)."""
+    from shutil import which
+    if which("magick"):
+        return "magick"
+    if which("convert"):
+        return "convert"
+    return "magick"  # Default fallback
 
 # -------------------------------
 # Core Processor
@@ -177,7 +194,8 @@ class MagickProcessor:
         outfile = safe_filename(path.stem, suffix, ext, self.output_folder)
 
         # Build Command
-        cmd = ["magick", str(path)]
+        magick_cmd = get_magick_command()
+        cmd = [magick_cmd, str(path)]
 
         # Metadata Stripping
         if strip:
@@ -286,6 +304,10 @@ def parse_arguments() -> Optional[Dict[str, Any]]:
         larg = arg.lower()
 
         # Flags
+        if larg in ["--version", "-v"]:
+            print(__version__)
+            sys.exit(0)
+
         if larg in ["--watch", "-w"]:
             config["watch"] = True
             continue
@@ -445,4 +467,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

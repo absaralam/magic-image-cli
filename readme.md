@@ -6,18 +6,27 @@
 
 ---
 
+---
+
 ## ⚡ Quick Start
 
-### 1. Install (Easiest Way)
+### 1. Install (Windows)
 Download **`install_magic.bat`** from the Releases page, right-click, and **Run as Administrator**.
 *(This automatically installs the latest version and keeps it updated.)*
 
-### Option B: Developer Setup (Source)
+### 🐧 Linux / Raspberry Pi
+Run this one-liner to install everything:
+```bash
+curl -sL https://raw.githubusercontent.com/absaralam/magic-image-cli/main/install_magic.sh | sudo bash
+```
+*(Installs ImageMagick, Python deps, and creates the `magic` command)*
+
+### Option C: Developer Setup (Source)
 If you downloaded the source code:
 Right-click **`setup_magic.bat`** and choose **Run as Administrator**.
 
 ### 2. Use
-Open any terminal (Command Prompt) and type:
+Open any terminal and type:
 ```bash
 magic photo.jpg 1080p
 ```
@@ -91,6 +100,5 @@ magic --watch 1080p format png
 **A:** JPG, PNG, WebP, BMP, TIFF, GIF, and ICO.
 
 ---
-
 
 **Made with ❤️ for efficiency.**
