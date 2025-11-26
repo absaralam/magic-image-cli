@@ -10,9 +10,6 @@ Usage:
     magic <image_path> <size> [options]
     magic --watch
     magic --clipboard
-
-Author: Antigravity
-License: MIT
 """
 
 import subprocess
@@ -448,3 +445,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
