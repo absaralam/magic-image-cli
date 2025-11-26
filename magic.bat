@@ -6,8 +6,6 @@ setlocal EnableExtensions DisableDelayedExpansion
 ::  Description: Portable batch wrapper for the Magick Image CLI (magic.py).
 ::               Ensures the Python environment is ready and passes all
 ::               arguments correctly to the Python script.
-::  Author: Antigravity
-::  License: MIT
 :: ===========================================================================
 
 :: ---------------------------------------------------------------------------
@@ -64,3 +62,4 @@ exit /b 1
 echo [ERROR] Python is not found in your PATH.
 echo Please install Python (https://www.python.org/) or run setup_magic.bat.
 exit /b 1
+
