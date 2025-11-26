@@ -1,0 +1,14 @@
+# Magick Tool Dependencies
+# Install with: pip install -r requirements.txt
+
+# File System Monitoring
+# Used for the --watch feature to detect new files in a folder
+watchdog>=3.0.0
+
+# Image Processing
+# Used for clipboard image access (ImageGrab) and validation
+Pillow>=10.0.0
+
+# Terminal Output
+# Used for cross-platform colored text output
+colorama>=0.4.6
