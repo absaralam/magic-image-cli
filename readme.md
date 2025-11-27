@@ -6,6 +6,8 @@
 
 ---
 
+---
+
 ## ⚡ Quick Start
 
 ### 1. Install (Windows)
@@ -17,7 +19,7 @@ If you have Python installed, just run:
 ```bash
 pip install magic-image-cli
 ```
-*(Works on Windows, and Linux!)*
+*(Works on Windows, Mac, and Linux!)*
 > **Note:** Requires [ImageMagick](https://imagemagick.org/script/download.php) to be installed.
 
 ### 3. Linux / Raspberry Pi
@@ -89,6 +91,8 @@ magic *.jpg watermark bottom left
 | **Watermark** | `watermark`, `wm` | `magic *.jpg wm bottom right` |
 | **Output Folder** | `to [folder]`, `to input` | `magic *.jpg to input` |
 | **Watch Mode** | `watch`, `monitor` | `magic watch` |
+| **PDF Merge** | `pdf`, `--pdf` | `magic *.jpg pdf` |
+| **PDF Batch** | `format pdf` | `magic *.jpg format pdf` |
 | **Clipboard** | `paste`, `clipboard` | `magic paste` |
 
 ---
@@ -142,7 +146,4 @@ Magick understands you. Try these:
 
 ---
 
-
 **Made with ❤️ for efficiency.**
-
-
