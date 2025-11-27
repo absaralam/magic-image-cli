@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 import shutil
+import json
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -40,7 +41,11 @@ init(autoreset=True)
 # -------------------------------
 # Constants & Config
 # -------------------------------
-__version__ = "2.4"
+__version__ = "2.5"
+CONFIG_FILE: str = ".magicrc"
+
+LOG_FILE: str = "magick_log.txt"
+SUPPORTED_EXTS: set = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".gif", ".ico"}
 
 PRESETS: Dict[str, str] = {
     "720p": "x720",
@@ -51,8 +56,32 @@ PRESETS: Dict[str, str] = {
     "8k": "x7680"
 }
 
-LOG_FILE: str = "magick_log.txt"
-SUPPORTED_EXTS: set = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff", ".gif", ".ico"}
+QUALITY_PRESETS: Dict[str, int] = {
+    "max": 100, "best": 100, 
+    "high": 90, 
+    "medium": 75, "med": 75, 
+    "low": 50
+}
+
+# Keywords that should be ignored if they don't match a file
+SAFE_WORDS: List[str] = [
+    "resize", "convert", "to", "save", "as", "format", "formats", "quality", 
+    "high", "medium", "med", "low", "max", "best", "crop", 
+    "clean", "remove", "metadata", "paste", "monitor", "stretch", "force", "watch", "clipboard"
+]
+
+# Gravity Mappings
+COMPOUND_GRAVITY: Dict[str, str] = {
+    "north-east": "NorthEast", "northeast": "NorthEast", "north_east": "NorthEast", "ne": "NorthEast",
+    "north-west": "NorthWest", "northwest": "NorthWest", "north_west": "NorthWest", "nw": "NorthWest",
+    "south-east": "SouthEast", "southeast": "SouthEast", "south_east": "SouthEast", "se": "SouthEast",
+    "south-west": "SouthWest", "southwest": "SouthWest", "south_west": "SouthWest", "sw": "SouthWest"
+}
+
+GRAVITY_TERMS: List[str] = [
+    "top", "upper", "north", "bottom", "lower", "south", 
+    "left", "west", "right", "east", "center", "middle"
+]
 
 # -------------------------------
 # Utils
@@ -95,6 +124,90 @@ def safe_filename(base: str, suffix: str, ext: str, folder: Path) -> Path:
         counter += 1
     return out_path
 
+def load_config() -> Dict[str, Any]:
+    """
+    Loads configuration from .magicrc files.
+    Priority:
+    1. Internal Defaults (Empty dict here, handled in parse_arguments)
+    2. Global Config (Same dir as magic.py)
+    3. Local Config (Current working directory)
+    
+    Returns a merged dictionary of settings.
+    """
+    config = {}
+    
+    # 1. Global Config (App Directory)
+    # When frozen with PyInstaller, sys.executable is the path.
+    # When running as script, __file__ is the path.
+    if getattr(sys, 'frozen', False):
+        app_dir = Path(sys.executable).parent
+    else:
+        app_dir = Path(__file__).parent
+        
+    global_config_path = app_dir / CONFIG_FILE
+    
+    # Auto-create global config if it doesn't exist
+    if not global_config_path.exists():
+        try:
+            # We only try to create it if we have write permissions
+            # We'll just try and catch the exception if it fails
+            create_default_config(global_config_path)
+            print(f"{Fore.CYAN}Welcome to Magic! Created a global config file for you at: {global_config_path}")
+            print(f"{Fore.CYAN}You can edit this file to set your permanent defaults.")
+        except Exception:
+            pass # Fail silently if we can't write to the app dir (e.g. Program Files)
+
+    if global_config_path.exists():
+        try:
+            with open(global_config_path, "r", encoding="utf-8") as f:
+                config.update(json.load(f))
+                # print(f"{Fore.CYAN}Loaded global config from {global_config_path}")
+        except Exception as e:
+            print(f"{Fore.RED}Error loading global config: {e}")
+
+    # 2. Local Config (Current Directory)
+    local_config_path = Path.cwd() / CONFIG_FILE
+    # Avoid loading twice if we are running from the app dir
+    if local_config_path.exists() and local_config_path.resolve() != global_config_path.resolve():
+        try:
+            with open(local_config_path, "r", encoding="utf-8") as f:
+                config.update(json.load(f))
+                # print(f"{Fore.CYAN}Loaded local config from {local_config_path}")
+        except Exception as e:
+            print(f"{Fore.RED}Error loading local config: {e}")
+            
+    return config
+
+def create_default_config(target_path: Path = None) -> bool:
+    """
+    Creates a default .magicrc file at the specified path.
+    If no path is provided, creates it in the current directory.
+    Returns True if successful, False otherwise.
+    """
+    if target_path is None:
+        target_path = Path(CONFIG_FILE)
+        
+    defaults = {
+        "output_folder": "output",
+        "pad_color": "black",
+        "log_enabled": False,
+        "watermark": None,
+        "gravity": "SouthEast",
+        "default_quality": 100,
+        "default_size": "x720"
+    }
+    try:
+        with open(target_path, "w", encoding="utf-8") as f:
+            json.dump(defaults, f, indent=4)
+        print(f"{Fore.GREEN}Created default configuration file: {target_path}")
+        return True
+    except Exception as e:
+        # Only print error if we were explicitly asked to create it (CLI flag)
+        # or if it's a critical failure. For auto-creation, we might want to be quieter,
+        # but for now, let's show it so the user knows why it failed.
+        print(f"{Fore.RED}Error creating config file at {target_path}: {e}")
+        return False
+
 # -------------------------------
 # Core Processor
 # -------------------------------
@@ -107,9 +220,6 @@ def get_magick_command() -> str:
         return "convert"
     return "magick"  # Default fallback
 
-# -------------------------------
-# Core Processor
-# -------------------------------
 class MagickProcessor:
     """
     Handles image processing tasks using ImageMagick.
@@ -123,13 +233,15 @@ class MagickProcessor:
             output_folder (str): Directory to save processed images.
             log_enabled (bool): Whether to write to the log file.
         """
-        self.output_folder = Path(output_folder)
+        self.output_folder = output_folder # Store as string initially to handle "__INPUT__" sentinel
         self.log_enabled = log_enabled
-        self.output_folder.mkdir(exist_ok=True)
+        if self.output_folder != "__INPUT__":
+             Path(self.output_folder).mkdir(exist_ok=True)
 
     def process(self, image_path: Path, sizes: List[str] = None, qualities: List[int] = None, 
                 formats: List[Optional[str]] = None, pad: bool = False, pad_color: str = "white", 
-                force: bool = False, crop: bool = False, strip: bool = False) -> List[Tuple]:
+                force: bool = False, crop: bool = False, strip: bool = False, 
+                watermark: str = None, gravity: str = "SouthEast") -> List[Tuple]:
         """
         Generates a list of processing tasks for a given image.
 
@@ -143,6 +255,8 @@ class MagickProcessor:
             force (bool): Whether to force exact dimensions (ignoring aspect ratio).
             crop (bool): Whether to smart crop to fill dimensions.
             strip (bool): Whether to strip metadata.
+            watermark (str): Path to watermark image.
+            gravity (str): Gravity for watermark positioning.
 
         Returns:
             List[Tuple]: A list of task tuples to be executed.
@@ -155,7 +269,7 @@ class MagickProcessor:
         for size in sizes:
             for quality in qualities:
                 for fmt in formats:
-                    tasks.append((image_path, size, quality, fmt, pad, pad_color, force, crop, strip))
+                    tasks.append((image_path, size, quality, fmt, pad, pad_color, force, crop, strip, watermark, gravity))
         
         return tasks
 
@@ -169,7 +283,7 @@ class MagickProcessor:
         Returns:
             Optional[Path]: The path to the generated file, or None if failed.
         """
-        image_path, resize, quality, fmt, pad_mode, pad_color, force, crop, strip = task
+        image_path, resize, quality, fmt, pad_mode, pad_color, force, crop, strip, watermark, gravity = task
         path = Path(image_path)
         
         if not path.exists():
@@ -189,9 +303,17 @@ class MagickProcessor:
         if pad_mode: suffix += "_pad"
         if crop: suffix += "_crop"
         if strip: suffix += "_clean"
+        if watermark: suffix += "_wm"
         
         ext = f".{fmt}" if fmt else path.suffix
-        outfile = safe_filename(path.stem, suffix, ext, self.output_folder)
+        
+        # Determine output folder
+        if self.output_folder == "__INPUT__":
+            target_folder = path.parent
+        else:
+            target_folder = Path(self.output_folder)
+            
+        outfile = safe_filename(path.stem, suffix, ext, target_folder)
 
         # Build Command
         magick_cmd = get_magick_command()
@@ -214,6 +336,16 @@ class MagickProcessor:
                 cmd.extend(["-resize", resize_str, "-background", pad_color, "-gravity", "center", "-extent", resize_str])
             else:
                 cmd.extend(["-resize", resize_str])
+        
+        # Watermark Composite
+        if watermark:
+            wm_path = Path(watermark)
+            if wm_path.exists():
+                # Syntax: magick input -resize ... watermark -gravity ... -composite output
+                # We need to insert watermark args before the output file but after resize
+                cmd.extend([str(wm_path), "-gravity", gravity, "-composite"])
+            else:
+                log(f"Watermark file not found: {watermark}", "warn")
 
         cmd.extend(["-quality", str(quality), str(outfile)])
 
@@ -268,32 +400,108 @@ class WatchHandler(FileSystemEventHandler):
         self.last_processed[path] = time.time()
 
 # -------------------------------
+# Argument Parsing Helpers
+# -------------------------------
+def _merge_spaced_args(args: List[str]) -> List[str]:
+    """
+    Merges spaced dimensions (e.g., '1920 x 1080' -> '1920x1080').
+    """
+    merged = []
+    i = 0
+    while i < len(args):
+        current = args[i]
+        # Check for pattern: Digit, x/X, Digit
+        if i + 2 < len(args):
+            next_arg = args[i+1]
+            next_next_arg = args[i+2]
+            if current.isdigit() and next_arg.lower() == "x" and next_next_arg.isdigit():
+                merged.append(f"{current}x{next_next_arg}")
+                i += 3
+                continue
+        merged.append(current)
+        i += 1
+    return merged
+
+def _resolve_watermark(config: Dict[str, Any], watermark_keyword: bool) -> None:
+    """
+    Attempts to find a watermark file if the keyword was used but no file specified.
+    """
+    if watermark_keyword and not config["watermark"]:
+        candidates = ["watermark.png", "logo.png"]
+        for ext in SUPPORTED_EXTS:
+            if ext == ".png": continue
+            candidates.append(f"watermark{ext}")
+            candidates.append(f"logo{ext}")
+            
+        for candidate in candidates:
+            if Path(candidate).exists():
+                config["watermark"] = candidate
+                break
+        
+        if not config["watermark"]:
+            print(f"{Fore.YELLOW}Warning: 'watermark' keyword used but no 'watermark' or 'logo' image found.")
+
+def _resolve_gravity(config: Dict[str, Any], v_align: str, h_align: str, override: bool) -> None:
+    """
+    Resolves final gravity based on vertical/horizontal alignment or overrides.
+    """
+    if not override and (v_align or h_align):
+        if v_align == "Center" and not h_align:
+            config["gravity"] = "Center"
+        else:
+            g = ""
+            if v_align: g += v_align
+            if h_align: g += h_align
+            if g: config["gravity"] = g
+
+# -------------------------------
 # Argument Parsing
 # -------------------------------
 def parse_arguments() -> Optional[Dict[str, Any]]:
     """
     Parses command line arguments into a configuration dictionary.
-    Supports flexible argument ordering.
+    Supports flexible argument ordering and natural language syntax.
     """
     args = sys.argv[1:]
     if not args:
         return None
 
+    # Load defaults from config file
+    file_config = load_config()
+
     config = {
         "sizes": [],
         "images": [],
-        "qualities": [100],
+        "qualities": [],
         "formats": [],
-        "output_folder": "output",
+        "output_folder": file_config.get("output_folder", "output"),
         "pad": False,
-        "pad_color": "black",
+        "pad_color": file_config.get("pad_color", "black"),
         "force": False,
         "crop": False,
         "strip": False,
-        "log_enabled": False,
+        "log_enabled": file_config.get("log_enabled", False),
         "watch": False,
-        "clipboard": False
+        "clipboard": False,
+        "watermark": file_config.get("watermark", None),
+        "gravity": file_config.get("gravity", "SouthEast")
     }
+    
+    # Default values from config or hardcoded
+    default_quality = file_config.get("default_quality", 100)
+    default_size = file_config.get("default_size", "x720")
+
+    # Pre-process args
+    args = _merge_spaced_args(args)
+
+    # Gravity State
+    v_align = ""
+    h_align = ""
+    gravity_override = False
+    
+    # Check context
+    watermark_context = any(a.lower() in ["--watermark", "-wm", "watermark", "wm"] for a in args)
+    watermark_keyword = False
 
     skip_next = False
     for i, arg in enumerate(args):
@@ -303,50 +511,144 @@ def parse_arguments() -> Optional[Dict[str, Any]]:
             
         larg = arg.lower()
 
-        # Flags
+        # --- Explicit Flags ---
+
+        # Input File
+        if larg in ["--file", "-file", "-f", "--input", "-input", "-i"]:
+            if i + 1 < len(args):
+                config["images"].append(args[i+1])
+                skip_next = True
+            continue
+
+        # Resize
+        if larg in ["--resize", "-resize", "-r", "-res", "--res", "--size", "-size", "-s"]:
+            if i + 1 < len(args):
+                val = args[i+1]
+                if val.isdigit(): config["sizes"].append(f"x{val}")
+                else: config["sizes"].append(val)
+                skip_next = True
+            continue
+
+        # Format
+        if larg in ["--format", "-format", "-fmt", "--fmt"]:
+            if i + 1 < len(args):
+                config["formats"].append(args[i+1])
+                skip_next = True
+            continue
+
+        # Quality
+        if larg in ["--quality", "-quality", "-q", "--q"]:
+            if i + 1 < len(args):
+                val = args[i+1]
+                if val.endswith("%"): val = val[:-1]
+                if val.isdigit(): config["qualities"].append(int(val))
+                skip_next = True
+            continue
+
+        # Output folder
+        if larg in ["to", "into", "output", "-o", "--o", "-output", "--output", "--out", "-out"]:
+            if i + 1 < len(args):
+                next_arg = args[i+1]
+                
+                # Heuristics to avoid consuming keywords as folders
+                is_size = next_arg in PRESETS or next_arg.isdigit() or ("x" in next_arg.lower() and next_arg.lower().replace("x","").isdigit())
+                is_format = next_arg.lower() in ["jpg", "jpeg", "png", "webp", "bmp", "ico", "tiff"]
+                is_explicit_flag = larg.startswith("-")
+                
+                if is_explicit_flag or (not is_size and not is_format):
+                    if next_arg.lower() in ["i", "input", "."]:
+                        config["output_folder"] = "__INPUT__"
+                    else:
+                        config["output_folder"] = next_arg
+                    skip_next = True
+                    continue
+
+        # Watermark
+        if larg in ["--watermark", "-watermark", "-wm"]:
+            if i + 1 < len(args):
+                config["watermark"] = args[i+1]
+                skip_next = True
+            continue
+        if larg in ["watermark", "wm"]:
+            watermark_keyword = True
+            continue
+
+        # Metadata
+        if larg == "remove" and i + 1 < len(args) and args[i+1].lower() == "metadata":
+            config["strip"] = True
+            skip_next = True
+            continue
+            
+        # Gravity
+        if larg in ["--gravity", "-g"]:
+            if i + 1 < len(args):
+                config["gravity"] = args[i+1]
+                skip_next = True
+                gravity_override = True
+            continue
+        
+        # Gravity Keywords
+        if larg in GRAVITY_TERMS or larg in COMPOUND_GRAVITY:
+            if watermark_context:
+                if larg in COMPOUND_GRAVITY:
+                    config["gravity"] = COMPOUND_GRAVITY[larg]
+                    gravity_override = True
+                elif larg in ["top", "upper", "north"]: v_align = "North"
+                elif larg in ["bottom", "lower", "south"]: v_align = "South"
+                elif larg in ["left", "west"]: h_align = "West"
+                elif larg in ["right", "east"]: h_align = "East"
+                elif larg in ["center", "middle"]: 
+                    v_align = "Center"
+                    h_align = ""
+                continue 
+            elif not Path(arg).exists():
+                print(f"{Fore.YELLOW}Warning: Ignored ambiguous argument '{arg}'. Did you mean 'watermark {arg}'?")
+                continue
+
+        # Quality Presets & Values
+        if larg == "quality":
+            # Check next arg
+            if i + 1 < len(args):
+                next_arg = args[i+1]
+                if next_arg.isdigit():
+                    config["qualities"].append(int(next_arg))
+                    skip_next = True
+                    continue
+                if next_arg.endswith("%") and next_arg[:-1].isdigit():
+                    config["qualities"].append(int(next_arg[:-1]))
+                    skip_next = True
+                    continue
+            # Check previous arg for preset (e.g. "high quality")
+            if i > 0 and args[i-1].lower() in QUALITY_PRESETS:
+                config["qualities"].append(QUALITY_PRESETS[args[i-1].lower()])
+                continue
+
+        # Flags (Boolean)
         if larg in ["--version", "-v"]:
             print(__version__)
             sys.exit(0)
-
-        if larg in ["--watch", "-w"]:
+        if larg == "--init-config":
+            create_default_config()
+            sys.exit(0)
+        if larg in ["--watch", "-watch", "-w", "--monitor", "-monitor", "watch", "monitor"]:
             config["watch"] = True
             continue
-        if larg in ["--clipboard", "-c", "-clip"]:
+        if larg in ["--clipboard", "-clipboard", "-c", "-clip", "--paste", "-paste", "clipboard", "paste"]:
             config["clipboard"] = True
             continue
-        if larg in ["--crop", "-crop"]:
+        if larg in ["--crop", "-crop", "crop"]:
             config["crop"] = True
             continue
-        if larg in ["--strip", "-strip", "-s"]:
+        if larg in ["--strip", "-strip", "-s", "--clean", "-clean", "--remove-metadata", "-remove-metadata", "clean"]:
             config["strip"] = True
             continue
         if larg in ["--no-logs", "-no-logs"]:
             config["log_enabled"] = False
             continue
-        
-        # Output folder
-        if larg in ["-o", "-output", "-folder"]:
-            if i + 1 < len(args):
-                config["output_folder"] = args[i+1]
-                skip_next = True
+        if larg in ["!", "--force", "-force", "--stretch", "-stretch", "--!", "-!", "stretch", "force"]:
+            config["force"] = True
             continue
 
-        # Presets / Sizes
-        # Matches: "720p", "720", "1920x1080"
-        if larg in PRESETS or (larg.isdigit()) or ("x" in larg and larg.replace("x","").isdigit()):
-            if larg.isdigit(): config["sizes"].append(f"x{larg}")
-            else: config["sizes"].append(larg)
-            continue
-
-        # Qualities
-        # Matches: "q80", "80%"
-        if larg.startswith("q") and larg[1:].isdigit():
-            config["qualities"] = [int(q[1:]) for q in arg.split(",")]
-            continue
-        if larg.endswith("%") and larg[:-1].isdigit():
-             config["qualities"] = [int(larg[:-1])]
-             continue
-        
         # Formats
         if larg in ["format", "formats"]: continue
         if larg in ["jpg", "jpeg", "png", "webp", "bmp", "ico", "tiff"]:
@@ -354,23 +656,52 @@ def parse_arguments() -> Optional[Dict[str, Any]]:
             continue
 
         # Pad
-        if "pad" in larg or "fill" in larg:
+        if larg in ["pad", "fill", "--pad", "-pad"]:
             config["pad"] = True
             continue
         if larg in ["black", "white", "transparent"] and not config["images"]: 
-            # Heuristic: colors are usually pad colors if not images
             config["pad_color"] = larg
             continue
 
-        # Stretch
-        if larg in ["!", "stretch"]:
-            config["force"] = True
+        # Safe Keywords (Filler)
+        if larg in SAFE_WORDS:
+            if Path(arg).exists(): pass 
+            else: continue
+
+        # Presets / Sizes
+        if larg in PRESETS or (larg.isdigit()) or ("x" in larg and larg.replace("x","").isdigit()):
+            if Path(arg).exists(): pass
+            else:
+                if larg.isdigit(): 
+                    val = int(larg)
+                    if 40 <= val <= 100:
+                        print(f"{Fore.YELLOW}Warning: Ambiguous argument '{larg}'. Did you mean quality 'q{larg}'? Treating as size 'x{larg}'.")
+                    config["sizes"].append(f"x{larg}")
+                else: config["sizes"].append(larg)
+                continue
+
+        # Qualities (Short syntax)
+        if larg.startswith("q") and larg[1:].isdigit():
+            config["qualities"].extend([int(q[1:]) for q in arg.split(",")])
             continue
+        if larg.endswith("%") and larg[:-1].isdigit():
+             config["qualities"].append(int(larg[:-1]))
+             continue
 
-        # Images
-        config["images"].append(arg)
+        # Images or Directories
+        p = Path(arg)
+        if p.is_dir():
+            for ext in SUPPORTED_EXTS:
+                config["images"].extend([str(f) for f in p.glob(f"*{ext}")])
+        else:
+            config["images"].append(arg)
 
-    if not config["sizes"]: config["sizes"] = ["x720"]
+    # Resolve Helpers
+    _resolve_gravity(config, v_align, h_align, gravity_override)
+    _resolve_watermark(config, watermark_keyword)
+
+    if not config["sizes"]: config["sizes"] = [default_size]
+    if not config["qualities"]: config["qualities"] = [default_quality]
     if not config["formats"]: config["formats"] = [None]
     
     return config
@@ -382,7 +713,7 @@ def main():
     config = parse_arguments()
     if not config:
         print(f"{Fore.YELLOW}Usage: magic <image/wildcard> <size> [options]")
-        print(f"Options: --watch, --clipboard, --crop, --strip, q80, format ico")
+        print(f"Options: --watch, --clipboard, --crop, --strip, --watermark logo.png, q80, format ico")
         return
 
     processor = MagickProcessor(config["output_folder"], config["log_enabled"])
@@ -396,7 +727,9 @@ def main():
         "pad_color": config["pad_color"],
         "force": config["force"],
         "crop": config["crop"],
-        "strip": config["strip"]
+        "strip": config["strip"],
+        "watermark": config["watermark"],
+        "gravity": config["gravity"]
     }
 
     # Mode 1: Watch
