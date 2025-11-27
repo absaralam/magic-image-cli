@@ -94,8 +94,7 @@ jobs:
       - name: Build EXE (If Release)
         if: steps.check_version.outputs.should_release == 'true'
         run: |
-          pyinstaller --onefile --name magic --icon=icon.ico magic.py
-          # Note: Assuming icon.ico exists or pyinstaller handles missing icon gracefully (warns).
+          pyinstaller --onefile --name magic magic.py
 
       - name: Create Release (If Release)
         if: steps.check_version.outputs.should_release == 'true'
