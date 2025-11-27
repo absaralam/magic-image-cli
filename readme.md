@@ -20,6 +20,7 @@ If you have Python installed, just run:
 pip install magic-image-cli
 ```
 *(Works on Windows, and Linux!)*
+> **Note:** Requires [ImageMagick](https://imagemagick.org/script/download.php) to be installed.
 
 ### 3. Linux / Raspberry Pi
 Run this one-liner to install everything:
@@ -145,3 +146,4 @@ Magick understands you. Try these:
 
 
 **Made with ❤️ for efficiency.**
+
