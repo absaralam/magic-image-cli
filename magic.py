@@ -41,7 +41,7 @@ init(autoreset=True)
 # -------------------------------
 # Constants & Config
 # -------------------------------
-__version__ = "2.5"
+__version__ = "2.6"
 CONFIG_FILE: str = ".magicrc"
 
 LOG_FILE: str = "magick_log.txt"
@@ -400,6 +400,52 @@ class WatchHandler(FileSystemEventHandler):
         self.last_processed[path] = time.time()
 
 # -------------------------------
+# PDF Helper
+# -------------------------------
+def merge_images_to_pdf(images: List[Path], output_folder: str) -> None:
+    """
+    Merges multiple images into a single PDF file.
+    """
+    if not images: return
+    
+    # Determine output filename
+    # If output_folder is a specific name (not 'output' or '__INPUT__'), use it as filename
+    # Otherwise use 'merged_images.pdf'
+    
+    target_folder = Path(output_folder)
+    if output_folder == "__INPUT__":
+        target_folder = images[0].parent
+    elif output_folder == "output":
+         target_folder = Path("output")
+         target_folder.mkdir(exist_ok=True)
+    
+    # Check if output_folder looks like a filename (ends in .pdf)
+    if str(target_folder).lower().endswith(".pdf"):
+        outfile = target_folder
+        # Ensure parent dir exists
+        if outfile.parent != Path("."):
+            outfile.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        # It's a folder, generate filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        outfile = target_folder / f"merged_{timestamp}.pdf"
+        if not target_folder.exists():
+            target_folder.mkdir(parents=True, exist_ok=True)
+
+    log(f"Merging {len(images)} images into {outfile}...", "info")
+    
+    # Command: magick convert img1 img2 ... output.pdf
+    cmd = [get_magick_command()]
+    cmd.extend([str(img) for img in images])
+    cmd.append(str(outfile))
+    
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        log(f"Successfully created PDF: {outfile}", "success")
+    except subprocess.CalledProcessError as e:
+        log(f"Error creating PDF: {e}", "error")
+
+# -------------------------------
 # Argument Parsing Helpers
 # -------------------------------
 def _merge_spaced_args(args: List[str]) -> List[str]:
@@ -484,7 +530,9 @@ def parse_arguments() -> Optional[Dict[str, Any]]:
         "watch": False,
         "clipboard": False,
         "watermark": file_config.get("watermark", None),
-        "gravity": file_config.get("gravity", "SouthEast")
+        "watermark": file_config.get("watermark", None),
+        "gravity": file_config.get("gravity", "SouthEast"),
+        "pdf_merge": False
     }
     
     # Default values from config or hardcoded
@@ -654,6 +702,15 @@ def parse_arguments() -> Optional[Dict[str, Any]]:
         if larg in ["jpg", "jpeg", "png", "webp", "bmp", "ico", "tiff"]:
             config["formats"].append(larg)
             continue
+        
+        # PDF Keyword (Merge Trigger vs Format)
+        if larg in ["pdf", "--pdf", "-pdf"]:
+            # Check if previous argument was "format"
+            if i > 0 and args[i-1].lower() in ["format", "formats", "--format", "-fmt"]:
+                config["formats"].append("pdf")
+            else:
+                config["pdf_merge"] = True
+            continue
 
         # Pad
         if larg in ["pad", "fill", "--pad", "-pad"]:
@@ -783,7 +840,19 @@ def main():
             else: log(f"File not found: {img_arg}", "warn")
 
     if not images:
-        log("No images found to process.", "warn")
+        # Implicit selection for PDF Merge
+        if config.get("pdf_merge"):
+            log("No files specified. Selecting all images in current directory...", "info")
+            for ext in SUPPORTED_EXTS:
+                images.extend(list(Path(".").glob(f"*{ext}")))
+        
+        if not images:
+            log("No images found to process.", "warn")
+            return
+
+    # PDF Merge Mode
+    if config.get("pdf_merge"):
+        merge_images_to_pdf(images, config["output_folder"])
         return
 
     log(f"Processing {len(images)} images...", "info")
