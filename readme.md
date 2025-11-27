@@ -6,8 +6,6 @@
 
 ---
 
----
-
 ## ⚡ Quick Start
 
 ### 1. Install (Windows)
@@ -145,5 +143,6 @@ Magick understands you. Try these:
 **A:** JPG, PNG, WebP, BMP, TIFF, GIF, and ICO.
 
 ---
+
 
 **Made with ❤️ for efficiency.**
