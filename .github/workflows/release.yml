@@ -1,0 +1,168 @@
+name: Auto Release
+
+on:
+  push:
+    paths:
+      - 'magic.py' # Only trigger when magic.py changes
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-release:
+    name: Check Version & Release
+    runs-on: windows-latest
+    outputs:
+      should_release: ${{ steps.check_version.outputs.should_release }}
+      new_version: ${{ steps.check_version.outputs.new_version }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Need full history to check previous version if needed, but here we check file.
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check Version
+        id: check_version
+        shell: python
+        run: |
+          import os
+          import re
+          import sys
+          
+          # Read current version from magic.py
+          with open("magic.py", "r", encoding="utf-8") as f:
+              content = f.read()
+              match = re.search(r'__version__ = "(.*)"', content)
+              if match:
+                  new_version = match.group(1)
+              else:
+                  print("Could not find version in magic.py")
+                  sys.exit(1)
+          
+          # Read old version from version.txt
+          old_version = "0.0"
+          if os.path.exists("version.txt"):
+              with open("version.txt", "r", encoding="utf-8") as f:
+                  old_version = f.read().strip()
+          
+          print(f"Magic.py Version: {new_version}")
+          print(f"Version.txt Version: {old_version}")
+          
+          # Simple string comparison or semantic versioning?
+          # Let's assume standard semantic versioning (major.minor)
+          # If strings are different, we assume it's a new version if it's not a downgrade.
+          # For simplicity, if they are different, we proceed, assuming user knows what they are doing.
+          
+          if new_version != old_version:
+              print("New version detected!")
+              # Write to GITHUB_OUTPUT
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                  fh.write(f"new_version={new_version}\n")
+                  fh.write(f"should_release=true\n")
+              
+              # Update version.txt locally for the build
+              with open("version.txt", "w", encoding="utf-8") as f:
+                  f.write(new_version)
+                  
+              # Update pyproject.toml locally
+              with open("pyproject.toml", "r", encoding="utf-8") as f:
+                  toml_content = f.read()
+              
+              # Replace version = "x.x" with new version
+              toml_content = re.sub(r'version = ".*"', f'version = "{new_version}"', toml_content)
+              
+              with open("pyproject.toml", "w", encoding="utf-8") as f:
+                  f.write(toml_content)
+          else:
+              print("Version unchanged. Skipping release.")
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                  fh.write(f"should_release=false\n")
+
+      - name: Install Dependencies (If Release)
+        if: steps.check_version.outputs.should_release == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install .  # Installs dependencies from pyproject.toml (Pillow, watchdog, etc.)
+          pip install pyinstaller
+
+      - name: Build EXE (If Release)
+        if: steps.check_version.outputs.should_release == 'true'
+        run: |
+          pyinstaller --onefile --name magic --icon=icon.ico magic.py
+          # Note: Assuming icon.ico exists or pyinstaller handles missing icon gracefully (warns).
+
+      - name: Create Release (If Release)
+        if: steps.check_version.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.check_version.outputs.new_version }}
+          name: Magic v${{ steps.check_version.outputs.new_version }}
+          body: |
+            📦 **How to Install**
+            1. Download **[install_magic.bat](https://github.com/${{ github.repository }}/releases/download/v${{ steps.check_version.outputs.new_version }}/install_magic.bat)**
+            2. Right-click and **Run as Administrator**.
+            3. That's it! Type `magic` in any terminal.
+          files: |
+            dist/magic.exe
+            install_magic.bat
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit Version Update (Optional)
+        if: steps.check_version.outputs.should_release == 'true'
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git add version.txt pyproject.toml
+          git commit -m "Bump version to ${{ steps.check_version.outputs.new_version }}"
+          git push
+
+  pypi-publish:
+    name: Publish to PyPI
+    needs: check-and-release
+    if: needs.check-and-release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      id-token: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+          
+      - name: Update pyproject.toml Version
+        shell: python
+        run: |
+          import re
+          # We need to get the version again or pass it. 
+          # Let's just read magic.py again as it is the source of truth.
+          with open("magic.py", "r") as f:
+              v = re.search(r'__version__ = "(.*)"', f.read()).group(1)
+          
+          with open("pyproject.toml", "r") as f:
+              c = f.read()
+          c = re.sub(r'version = ".*"', f'version = "{v}"', c)
+          with open("pyproject.toml", "w") as f:
+              f.write(c)
+              
+      - name: Build Package
+        run: python -m build
+        
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
