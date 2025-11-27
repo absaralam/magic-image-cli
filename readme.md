@@ -6,6 +6,8 @@
 
 ---
 
+---
+
 ## ⚡ Quick Start
 
 ### 1. Install (Windows)
@@ -58,34 +60,69 @@ magic photo.jpg --strip
 ```
 > **Result:** A clean image with no personal metadata attached.
 
+### "I want to watermark my photos"
+```bash
+magic *.jpg watermark bottom left
+```
+> **Result:** Adds `watermark.png` (from current folder) to the bottom-left of every image.
+> *Note: You can also use `magic *.jpg --watermark logo.png` for specific files.*
+
 ### "I want to process an image from my Clipboard"
 1. Copy an image (Ctrl+C) from a website or screenshot.
-2. Run:
-```bash
-magic --clipboard 1080p
-```
-> **Result:** The image from your clipboard is saved and resized instantly.
-
-### "I want a 'Magic Folder' that does it automatically"
-```bash
-magic --watch 1080p format png
-```
-> **Result:** The tool watches the folder. **Drag and drop** any file in, and it automatically converts it to a 1080p PNG.
-
----
 
 ## 🧩 Cheat Sheet
 
-| Feature | Command Option | Example |
+| Feature | Command / Keyword | Example |
 | :--- | :--- | :--- |
-| **Resize (Preset)** | `720p`, `1080p`, `4k` | `magic photo.jpg 4k` |
-| **Resize (Custom)** | `WxH` | `magic photo.jpg 800x600` |
-| **Smart Crop** | `--crop` | `magic 500x500 --crop photo.jpg` |
-| **Convert Format** | `format [png/jpg/ico]` | `magic *.png format jpg` |
-| **Quality** | `q[40-100]` | `magic *.jpg q80` |
-| **Privacy** | `--strip` | `magic *.jpg --strip` |
-| **Watch Mode** | `--watch` | `magic --watch` |
-| **Clipboard** | `--clipboard` | `magic --clipboard` |
+| **Resize** | `720p`, `1080p`, `WxH` | `magic photo.jpg 1080p` |
+| **Force Resize** | `stretch`, `force`, `!` | `magic photo.jpg 100x100 stretch` |
+| **Smart Crop** | `crop` | `magic photo.jpg 500x500 crop` |
+| **Format** | `format [png/jpg/ico]` | `magic *.webp format png` |
+| **Quality** | `quality [0-100]`, `high`, `best` | `magic *.jpg quality 80` |
+| **Privacy** | `clean`, `remove metadata` | `magic *.jpg clean` |
+| **Watermark** | `watermark`, `wm` | `magic *.jpg wm bottom right` |
+| **Output Folder** | `to [folder]`, `to input` | `magic *.jpg to input` |
+| **Watch Mode** | `watch`, `monitor` | `magic watch` |
+| **Clipboard** | `paste`, `clipboard` | `magic paste` |
+
+---
+
+## ⚙️ Configuration
+Want to set your own defaults? (e.g., always watermark, default quality 90)
+
+1.  **Generate a config file:**
+    ```bash
+    magic --init-config
+    ```
+    This creates a `.magicrc` file in your current folder.
+
+2.  **Edit `.magicrc`:**
+    Open it in any text editor and change the values:
+    ```json
+    {
+        "output_folder": "processed_images",
+        "default_quality": 90,
+        "watermark": "logo.png"
+    }
+    ```
+    *Now `magic photo.jpg` will automatically use these settings!*
+
+### 🧠 Smart Config Search
+Magick looks for `.magicrc` in this order:
+1.  **Current Folder:** Overrides everything (Great for specific projects).
+2.  **Tool Folder:** Same folder as `magic.exe` or `magic.py` (Great for global defaults).
+
+*Tip: Put a `.magicrc` next to the tool for global settings, and run `magic --init-config` in specific folders to override them.*
+
+---
+
+## 🗣️ Natural Language Examples
+Magick understands you. Try these:
+- `magic photo.jpg to input` (Save to same folder)
+- `magic photo.jpg clean` (Remove metadata)
+- `magic paste 1080p` (Paste from clipboard and resize)
+- `magic watch format png` (Watch folder and convert new files to PNG)
+- `magic photo.jpg 100x100 stretch` (Force exact size, ignore aspect ratio)
 
 ---
 
@@ -98,6 +135,5 @@ magic --watch 1080p format png
 **A:** JPG, PNG, WebP, BMP, TIFF, GIF, and ICO.
 
 ---
-
 
 **Made with ❤️ for efficiency.**
