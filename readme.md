@@ -6,8 +6,6 @@
 
 ---
 
----
-
 ## ⚡ Quick Start
 
 ### 1. Install (Windows)
@@ -146,4 +144,5 @@ Magick understands you. Try these:
 
 
 **Made with ❤️ for efficiency.**
+
 
